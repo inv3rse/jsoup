@@ -1,5 +1,6 @@
 package org.jsoup.integration;
 
+import okio.Okio;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -8,6 +9,8 @@ import org.junit.Test;
 
 import java.io.*;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.Assert.*;
 
@@ -178,10 +181,68 @@ public class ParseTest {
         assertEquals("UTF-8", doc.outputSettings().charset().name());
     }
 
+    /**
+     * Whenever the content is wrapped into a okio stream it misses a character
+     */
+    @Test
+    public void testParseNuReleasesOkio() throws IOException {
+        String data = getFileContent("/htmltests/novelupdates_releases.html");
+
+        InputStream inputStream = inputStreamFrom(data);
+        InputStream okIoStream = Okio.buffer(Okio.source(inputStream)).inputStream();
+
+        // replaces one extnu with etnu
+        Document doc = Jsoup.parse(okIoStream, "UTF-8", "http://www.novelupdates.com");
+
+        assertFalse(doc.toString().contains("etnu"));
+    }
+
+    /**
+     * Works fine without okio wrapping
+     */
+    @Test
+    public void testParseNuReleasesString() throws IOException {
+        String data = getFileContent("/htmltests/novelupdates_releases.html");
+        Document doc = Jsoup.parse(data, "http://www.novelupdates.com");
+
+        assertFalse(doc.toString().contains("etnu"));
+    }
+
+    /**
+     * Confirm that the okio stream contains the correct data
+     */
+    @Test
+    public void testOkioStreamCorrect() throws IOException {
+        String data = getFileContent("/htmltests/novelupdates_releases.html");
+
+        InputStream inputStream = inputStreamFrom(data);
+        InputStream okioStream = Okio.buffer(Okio.source(inputStream)).inputStream();
+
+        // okio stream to string again
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int length;
+        while ((length = okioStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, length);
+        }
+
+        String data2 = outputStream.toString("UTF-8");
+        assertEquals(data, data2);
+
+        // works as string
+        Document doc = Jsoup.parse(data2, "http://www.novelupdates.com");
+
+        assertFalse(doc.toString().contains("etnu"));
+    }
+
+    private static String getFileContent(String resourceName) throws IOException {
+        File in = getFile(resourceName);
+        return Okio.buffer(Okio.source(in)).readString(Charset.defaultCharset());
+    }
+
     public static File getFile(String resourceName) {
         try {
-            File file = new File(ParseTest.class.getResource(resourceName).toURI());
-            return file;
+            return new File(ParseTest.class.getResource(resourceName).toURI());
         } catch (URISyntaxException e) {
             throw new IllegalStateException(e);
         }
